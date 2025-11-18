@@ -16,68 +16,40 @@ const Login: React.FC = () => {
     setError('');
 
     try {
-      // First, check if user exists in Firestore and is not locked
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', email));
-      const querySnapshot = await getDocs(q);
+      // First attempt to login with Firebase Authentication
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
       
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        const userData = userDoc.data();
-        
-        // Check if account is locked due to too many failed attempts
-        if (userData.failedLoginAttempts >= 3) {
-          setError('Account temporarily locked due to multiple failed attempts. Check your email for instructions.');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Attempt to login with Firebase Authentication
-      await signInWithEmailAndPassword(auth, email, password);
-      
-      // Reset failed attempts on successful login
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        await updateDoc(doc(db, 'users', userDoc.id), {
-          failedLoginAttempts: 0,
-          lastLogin: new Date()
-        });
-      }
-
       console.log('Login successful!');
-      // No need for alert - the auth state change will redirect to dashboard automatically
-
-    } catch (error: any) {
-      console.error('Login error:', error);
       
-      // Handle invalid credentials (wrong password)
-      if (error.code === 'auth/invalid-credential') {
-        // Find user in Firestore to update failed attempts
+      // Now that user is authenticated, we can safely access Firestore
+      try {
+        // Check if user exists in Firestore and reset failed attempts
         const usersRef = collection(db, 'users');
         const q = query(usersRef, where('email', '==', email));
         const querySnapshot = await getDocs(q);
         
         if (!querySnapshot.empty) {
           const userDoc = querySnapshot.docs[0];
-          const userData = userDoc.data();
-          const newAttempts = (userData.failedLoginAttempts || 0) + 1;
-          
-          // Update failed login attempts count
           await updateDoc(doc(db, 'users', userDoc.id), {
-            failedLoginAttempts: newAttempts,
-            lastFailedAttempt: new Date()
+            failedLoginAttempts: 0,
+            lastLogin: new Date()
           });
-
-          // Show appropriate error message
-          if (newAttempts >= 3) {
-            setError('Too many failed attempts. Account locked. Check your email for instructions.');
-          } else {
-            setError(`Invalid credentials. ${3 - newAttempts} attempts remaining.`);
-          }
-        } else {
-          setError('Invalid email or password.');
         }
+      } catch (firestoreError) {
+        console.log('Firestore update optional - user might not exist in users collection yet');
+      }
+
+    } catch (error: any) {
+      console.error('Login error:', error);
+      
+      // Handle invalid credentials (wrong password)
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+        
+        // Optional: You could create a separate admin function to handle failed attempts
+        // that doesn't require user authentication
+        console.log('Failed login attempt for:', email);
       } 
       // Handle user not found
       else if (error.code === 'auth/user-not-found') {
@@ -85,7 +57,7 @@ const Login: React.FC = () => {
       }
       // Handle other errors
       else {
-        setError(error.message);
+        setError('Login failed. Please try again.');
       }
     } finally {
       setLoading(false);
