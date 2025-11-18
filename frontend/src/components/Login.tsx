@@ -17,8 +17,7 @@ const Login: React.FC = () => {
 
     try {
       // First attempt to login with Firebase Authentication
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      await signInWithEmailAndPassword(auth, email, password);
       
       console.log('Login successful!');
       
